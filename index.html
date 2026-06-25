@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Is het warm?</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #5b6573;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 1.5rem;
+      transition: background 0.6s ease;
+    }
+    h1 {
+      font-size: clamp(1.2rem, 4vw, 1.8rem);
+      font-weight: 500;
+      opacity: 0.9;
+    }
+    .answer {
+      font-size: clamp(5rem, 28vw, 16rem);
+      font-weight: 800;
+      line-height: 1;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Is het warm in Nederland?</h1>
+  <div class="answer" id="answer">…</div>
+
+  <script>
+    // De Bilt — officieel KNMI-referentiepunt voor "het Nederlandse weer"
+    const LAT = 52.10;
+    const LON = 5.18;
+    const WARM_DREMPEL = 20; // °C — vanaf hier "JA"
+
+    const answerEl = document.getElementById('answer');
+
+    async function laad() {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const t = data?.current?.temperature_2m;
+        if (typeof t !== 'number') throw new Error('Geen temperatuur');
+        const warm = t >= WARM_DREMPEL;
+        answerEl.textContent = warm ? 'JA' : 'NEE';
+        document.body.style.background = warm ? '#e8590c' : '#1c7ed6';
+      } catch (err) {
+        answerEl.textContent = '?';
+        console.error(err);
+      }
+    }
+
+    laad();
+  </script>
+</body>
+</html>
