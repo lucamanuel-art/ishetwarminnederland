@@ -164,9 +164,33 @@
     // De Bilt — officieel KNMI-referentiepunt voor "het Nederlandse weer"
     const LAT = 52.10;
     const LON = 5.18;
-    const WARM_DREMPEL = 20; // °C — vanaf hier "JA"
+    const WARM_DREMPEL = 20; // °C — middelpunt van de warmte-curve
+
+    // Afstelling van de formule
+    const TEMP_STEILHEID = 0.4; // k — hoe sterk de afwijking van de drempel meetelt
+    const STEM_HALFWAARDE = 8;  // K — bij hoeveel stemmen de massa half zo zwaar weegt
 
     const answerEl = document.getElementById('answer');
+
+    let huidigeTemp = null;             // laatst gemeten temperatuur (°C)
+    let stemmen = { warm: 0, koud: 0 }; // huidige stemtotalen (JA = warm, NEE = koud)
+
+    // Combineer temperatuur en stemmen tot één warmte-score (0–1) → JA/NEE.
+    // - tempScore: logistische curve rond de drempel (hoe warmer, hoe hoger).
+    // - stemAandeel: fractie JA-stemmen.
+    // - stemGewicht: groeit met het aantal stemmen, zodat de massa de
+    //   thermometer pas bij genoeg stemmen kan overstemmen.
+    function bepaalAntwoord() {
+      if (huidigeTemp === null) return; // temperatuur nog niet bekend
+      const tempScore = 1 / (1 + Math.exp(-TEMP_STEILHEID * (huidigeTemp - WARM_DREMPEL)));
+      const n = stemmen.warm + stemmen.koud;
+      const stemAandeel = n ? stemmen.warm / n : 0;
+      const stemGewicht = n / (n + STEM_HALFWAARDE);
+      const score = (1 - stemGewicht) * tempScore + stemGewicht * stemAandeel;
+      const warm = score >= 0.5;
+      answerEl.textContent = warm ? 'JA' : 'NEE';
+      document.body.style.background = warm ? '#e8590c' : '#1c7ed6';
+    }
 
     async function laad() {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m`;
@@ -176,16 +200,13 @@
         const data = await res.json();
         const t = data?.current?.temperature_2m;
         if (typeof t !== 'number') throw new Error('Geen temperatuur');
-        const warm = t >= WARM_DREMPEL;
-        answerEl.textContent = warm ? 'JA' : 'NEE';
-        document.body.style.background = warm ? '#e8590c' : '#1c7ed6';
+        huidigeTemp = t;
+        bepaalAntwoord();
       } catch (err) {
         answerEl.textContent = '?';
         console.error(err);
       }
     }
-
-    laad();
 
     // Ventilator-toggle — puur visueel
     const ventilator = document.getElementById('ventilator');
@@ -199,8 +220,23 @@
     // Gedeelde JA/NEE-poll via gratis counter-API (geen eigen database)
     const POLL_API = 'https://abacus.jasoncameron.dev';
     const POLL_NS = 'ishetwarm-nl-poll-v1';
-    const STEM_SLEUTEL = 'ishetwarm-stem'; // localStorage: 'warm' of 'koud'
     const LABELS = { warm: 'JA', koud: 'NEE' };
+
+    // ISO-weeknummer (maandag = weekstart) — tellers en stemvlag resetten zo per week.
+    function isoWeekId(d = new Date()) {
+      const datum = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const dagNr = (datum.getUTCDay() + 6) % 7;         // maandag = 0 … zondag = 6
+      datum.setUTCDate(datum.getUTCDate() - dagNr + 3);  // donderdag van deze week
+      const isoJaar = datum.getUTCFullYear();
+      const eersteDonderdag = new Date(Date.UTC(isoJaar, 0, 4));
+      const eersteDagNr = (eersteDonderdag.getUTCDay() + 6) % 7;
+      eersteDonderdag.setUTCDate(eersteDonderdag.getUTCDate() - eersteDagNr + 3);
+      const week = 1 + Math.round((datum - eersteDonderdag) / 6048e5); // 6048e5 = ms per week
+      return `${isoJaar}w${String(week).padStart(2, '0')}`;
+    }
+
+    const WEEK = isoWeekId();                       // bijv. "2026w27"
+    const STEM_SLEUTEL = `ishetwarm-stem-${WEEK}`;  // localStorage-vlag, per week
 
     const stemJa = document.getElementById('stemJa');
     const stemNee = document.getElementById('stemNee');
@@ -211,20 +247,24 @@
     const vulling = { warm: document.getElementById('vullingJa'), koud: document.getElementById('vullingNee') };
     const getal = { warm: document.getElementById('getalJa'), koud: document.getElementById('getalNee') };
 
-    async function tellerGet(key) {
-      const res = await fetch(`${POLL_API}/get/${POLL_NS}/${key}`);
-      if (res.status === 404) return 0; // teller bestaat nog niet
+    // Tellernaam = keuze + huidige week, bijv. "warm-2026w27" → start elke week op 0.
+    const tellerNaam = (keuze) => `${keuze}-${WEEK}`;
+
+    async function tellerGet(keuze) {
+      const res = await fetch(`${POLL_API}/get/${POLL_NS}/${tellerNaam(keuze)}`);
+      if (res.status === 404) return 0; // teller bestaat nog niet (nieuwe week)
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return (await res.json()).value ?? 0;
     }
 
-    async function tellerHit(key) {
-      const res = await fetch(`${POLL_API}/hit/${POLL_NS}/${key}`);
+    async function tellerHit(keuze) {
+      const res = await fetch(`${POLL_API}/hit/${POLL_NS}/${tellerNaam(keuze)}`);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return (await res.json()).value ?? 0;
     }
 
-    function toonStand(warm, koud) {
+    function toonStand() {
+      const { warm, koud } = stemmen;
       const totaal = warm + koud;
       const pct = (n) => totaal ? Math.round((n / totaal) * 100) : 0;
       vulling.warm.style.width = pct(warm) + '%';
@@ -234,9 +274,11 @@
       pollUitslag.hidden = false;
     }
 
-    async function verversStand() {
+    // Actuele stemtotalen ophalen (zonder op te hogen) en het antwoord herberekenen.
+    async function haalStemmen() {
       const [warm, koud] = await Promise.all([tellerGet('warm'), tellerGet('koud')]);
-      toonStand(warm, koud);
+      stemmen = { warm, koud };
+      bepaalAntwoord();
     }
 
     function markeerStem(keuze) {
@@ -252,7 +294,8 @@
         await tellerHit(keuze);
         localStorage.setItem(STEM_SLEUTEL, keuze);
         markeerStem(keuze);
-        await verversStand();
+        await haalStemmen();
+        toonStand();
       } catch (err) {
         console.error(err);
         pollMelding.textContent = 'Stemmen lukt nu even niet. Probeer het later opnieuw.';
@@ -264,17 +307,20 @@
     stemJa.addEventListener('click', () => stem('warm'));
     stemNee.addEventListener('click', () => stem('koud'));
 
-    // Bij laden: heeft deze bezoeker al gestemd? Toon dan meteen de stand.
+    // Start: temperatuur én stemmen ophalen. De stemmen tellen mee in het
+    // antwoord, dus we halen ze altijd op — ook als deze bezoeker nog niet stemde.
+    // De balken tonen we pas nadat iemand zelf gestemd heeft.
+    laad();
     (async () => {
       const alGestemd = localStorage.getItem(STEM_SLEUTEL);
-      if (alGestemd === 'warm' || alGestemd === 'koud') {
-        markeerStem(alGestemd);
-        try {
-          await verversStand();
-        } catch (err) {
-          console.error(err);
-          pollMelding.textContent = 'De stand kan nu even niet geladen worden.';
-        }
+      const heeftGestemd = alGestemd === 'warm' || alGestemd === 'koud';
+      if (heeftGestemd) markeerStem(alGestemd);
+      try {
+        await haalStemmen();
+        if (heeftGestemd) toonStand();
+      } catch (err) {
+        console.error(err);
+        if (heeftGestemd) pollMelding.textContent = 'De stand kan nu even niet geladen worden.';
       }
     })();
   </script>
