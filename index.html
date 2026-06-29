@@ -30,11 +30,135 @@
       line-height: 1;
       margin-top: 1rem;
     }
+    .ventilator-knop {
+      margin-top: 2rem;
+      padding: 0.7rem 1.4rem;
+      font-size: 1rem;
+      font-family: inherit;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .ventilator-knop:hover { background: rgba(255, 255, 255, 0.28); }
+    .ventilator {
+      width: clamp(4rem, 18vw, 7rem);
+      height: clamp(4rem, 18vw, 7rem);
+      margin-top: 1.5rem;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .ventilator.draait { opacity: 1; }
+    .ventilator.draait .blad {
+      transform-origin: 50% 50%;
+      animation: draai 0.6s linear infinite;
+    }
+    @keyframes draai {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ventilator.draait .blad { animation: none; }
+    }
+    .poll {
+      margin-top: 2.5rem;
+      width: min(420px, 100%);
+    }
+    .poll h2 {
+      font-size: clamp(1rem, 3.5vw, 1.3rem);
+      font-weight: 500;
+      opacity: 0.9;
+      margin-bottom: 1rem;
+    }
+    .poll-knoppen {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    .stem-knop {
+      flex: 1;
+      max-width: 9rem;
+      padding: 0.7rem 1rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      font-family: inherit;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .stem-knop:hover:not(:disabled) { background: rgba(255, 255, 255, 0.28); }
+    .stem-knop:disabled { cursor: default; opacity: 0.7; }
+    .poll-uitslag { margin-top: 1.25rem; }
+    .poll-uitslag[hidden] { display: none; }
+    .balk-rij {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.6rem;
+      font-size: 0.95rem;
+    }
+    .balk-label { width: 3rem; text-align: left; font-weight: 700; flex: none; }
+    .balk-spoor {
+      flex: 1;
+      height: 0.85rem;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .balk-vulling {
+      height: 100%;
+      width: 0;
+      background: rgba(255, 255, 255, 0.85);
+      border-radius: 999px;
+      transition: width 0.5s ease;
+    }
+    .balk-getal { width: 4.5rem; text-align: right; flex: none; opacity: 0.9; }
+    .poll-melding { margin-top: 1rem; font-size: 0.9rem; opacity: 0.85; min-height: 1.2em; }
+    .jouw-stem { margin-top: 0.75rem; font-size: 0.9rem; opacity: 0.9; }
+    .jouw-stem[hidden] { display: none; }
   </style>
 </head>
 <body>
   <h1>Is het warm in Nederland?</h1>
   <div class="answer" id="answer">…</div>
+
+  <button class="ventilator-knop" id="ventilatorKnop" type="button" aria-pressed="false">Ventilator aan</button>
+  <svg class="ventilator" id="ventilator" viewBox="0 0 100 100" aria-hidden="true">
+    <g class="blad" fill="currentColor">
+      <path d="M50 50 C50 20 35 10 30 25 C26 37 40 45 50 50 Z"/>
+      <path d="M50 50 C80 50 90 35 75 30 C63 26 55 40 50 50 Z"/>
+      <path d="M50 50 C50 80 65 90 70 75 C74 63 60 55 50 50 Z"/>
+      <path d="M50 50 C20 50 10 65 25 70 C37 74 45 60 50 50 Z"/>
+    </g>
+    <circle cx="50" cy="50" r="6" fill="currentColor"/>
+  </svg>
+
+  <section class="poll" aria-labelledby="pollVraag">
+    <h2 id="pollVraag">Vind jij het warm?</h2>
+    <div class="poll-knoppen">
+      <button class="stem-knop" id="stemJa" type="button" data-keuze="warm">JA</button>
+      <button class="stem-knop" id="stemNee" type="button" data-keuze="koud">NEE</button>
+    </div>
+    <div class="poll-uitslag" id="pollUitslag" hidden>
+      <div class="balk-rij">
+        <span class="balk-label">JA</span>
+        <span class="balk-spoor"><span class="balk-vulling" id="vullingJa"></span></span>
+        <span class="balk-getal" id="getalJa">0</span>
+      </div>
+      <div class="balk-rij">
+        <span class="balk-label">NEE</span>
+        <span class="balk-spoor"><span class="balk-vulling" id="vullingNee"></span></span>
+        <span class="balk-getal" id="getalNee">0</span>
+      </div>
+      <p class="jouw-stem" id="jouwStem" hidden></p>
+    </div>
+    <p class="poll-melding" id="pollMelding"></p>
+  </section>
 
   <script>
     // De Bilt — officieel KNMI-referentiepunt voor "het Nederlandse weer"
@@ -62,6 +186,97 @@
     }
 
     laad();
+
+    // Ventilator-toggle — puur visueel
+    const ventilator = document.getElementById('ventilator');
+    const ventilatorKnop = document.getElementById('ventilatorKnop');
+    ventilatorKnop.addEventListener('click', () => {
+      const aan = ventilator.classList.toggle('draait');
+      ventilatorKnop.textContent = aan ? 'Ventilator uit' : 'Ventilator aan';
+      ventilatorKnop.setAttribute('aria-pressed', String(aan));
+    });
+
+    // Gedeelde JA/NEE-poll via gratis counter-API (geen eigen database)
+    const POLL_API = 'https://abacus.jasoncameron.dev';
+    const POLL_NS = 'ishetwarm-nl-poll-v1';
+    const STEM_SLEUTEL = 'ishetwarm-stem'; // localStorage: 'warm' of 'koud'
+    const LABELS = { warm: 'JA', koud: 'NEE' };
+
+    const stemJa = document.getElementById('stemJa');
+    const stemNee = document.getElementById('stemNee');
+    const stemKnoppen = [stemJa, stemNee];
+    const pollUitslag = document.getElementById('pollUitslag');
+    const pollMelding = document.getElementById('pollMelding');
+    const jouwStemEl = document.getElementById('jouwStem');
+    const vulling = { warm: document.getElementById('vullingJa'), koud: document.getElementById('vullingNee') };
+    const getal = { warm: document.getElementById('getalJa'), koud: document.getElementById('getalNee') };
+
+    async function tellerGet(key) {
+      const res = await fetch(`${POLL_API}/get/${POLL_NS}/${key}`);
+      if (res.status === 404) return 0; // teller bestaat nog niet
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return (await res.json()).value ?? 0;
+    }
+
+    async function tellerHit(key) {
+      const res = await fetch(`${POLL_API}/hit/${POLL_NS}/${key}`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return (await res.json()).value ?? 0;
+    }
+
+    function toonStand(warm, koud) {
+      const totaal = warm + koud;
+      const pct = (n) => totaal ? Math.round((n / totaal) * 100) : 0;
+      vulling.warm.style.width = pct(warm) + '%';
+      vulling.koud.style.width = pct(koud) + '%';
+      getal.warm.textContent = totaal ? `${warm} (${pct(warm)}%)` : '0';
+      getal.koud.textContent = totaal ? `${koud} (${pct(koud)}%)` : '0';
+      pollUitslag.hidden = false;
+    }
+
+    async function verversStand() {
+      const [warm, koud] = await Promise.all([tellerGet('warm'), tellerGet('koud')]);
+      toonStand(warm, koud);
+    }
+
+    function markeerStem(keuze) {
+      stemKnoppen.forEach((b) => { b.disabled = true; });
+      jouwStemEl.textContent = `Jij stemde: ${LABELS[keuze]}`;
+      jouwStemEl.hidden = false;
+    }
+
+    async function stem(keuze) {
+      stemKnoppen.forEach((b) => { b.disabled = true; });
+      pollMelding.textContent = '';
+      try {
+        await tellerHit(keuze);
+        localStorage.setItem(STEM_SLEUTEL, keuze);
+        markeerStem(keuze);
+        await verversStand();
+      } catch (err) {
+        console.error(err);
+        pollMelding.textContent = 'Stemmen lukt nu even niet. Probeer het later opnieuw.';
+        const alGestemd = localStorage.getItem(STEM_SLEUTEL);
+        stemKnoppen.forEach((b) => { b.disabled = Boolean(alGestemd); });
+      }
+    }
+
+    stemJa.addEventListener('click', () => stem('warm'));
+    stemNee.addEventListener('click', () => stem('koud'));
+
+    // Bij laden: heeft deze bezoeker al gestemd? Toon dan meteen de stand.
+    (async () => {
+      const alGestemd = localStorage.getItem(STEM_SLEUTEL);
+      if (alGestemd === 'warm' || alGestemd === 'koud') {
+        markeerStem(alGestemd);
+        try {
+          await verversStand();
+        } catch (err) {
+          console.error(err);
+          pollMelding.textContent = 'De stand kan nu even niet geladen worden.';
+        }
+      }
+    })();
   </script>
 </body>
 </html>
